@@ -1,300 +1,179 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEXUS - Admin Central Command</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <style>
-        :root {
-            --bg-color: #030712;
-            --card-bg: #0b1329;
-            --gold-accent: #d4af37;
-            --gold-hover: #f3cf55;
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --border-color: rgba(212, 175, 55, 0.3);
-            --danger: #ef4444;
-            --success: #10b981;
-        }
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 15px;
-        }
-        .dashboard-container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 15px;
-            margin-bottom: 25px;
-        }
-        h1 {
-            margin: 0;
-            font-size: 24px;
-            letter-spacing: 2px;
-        }
-        h1 span {
-            color: var(--gold-accent);
-        }
-        .status-badge {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--success);
-            border: 1px solid var(--success);
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 13px;
-        }
-        .grid-layout {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        @media (max-width: 900px) {
-            .grid-layout {
-                grid-template-columns: 1fr;
-            }
-        }
-        .card {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-        }
-        h2 {
-            margin-top: 0;
-            color: var(--gold-accent);
-            font-size: 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-        }
-        .nexus-input, .nexus-select {
-            width: 100%;
-            padding: 12px;
-            background: rgba(3, 7, 18, 0.8);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: white;
-            box-sizing: border-box;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        .nexus-select option {
-            background: var(--card-bg);
-            color: white;
-        }
-        .btn {
-            width: 100%;
-            background: var(--gold-accent);
-            color: var(--bg-color);
-            font-weight: bold;
-            padding: 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            text-transform: uppercase;
-            font-size: 14px;
-        }
-        .btn:hover {
-            background: var(--gold-hover);
-        }
-        .btn-danger {
-            background: var(--danger);
-            color: white;
-        }
-        ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-            max-height: 180px;
-            overflow-y: auto;
-        }
-        li {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            font-size: 14px;
-        }
-        .badge-active {
-            background: rgba(16, 185, 129, 0.2);
-            color: var(--success);
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        .action-link {
-            color: var(--danger);
-            cursor: pointer;
-            text-decoration: underline;
-        }
-        .logs-box {
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 6px;
-            padding: 15px;
-            font-family: monospace;
-            height: 130px;
-            overflow-y: auto;
-            border: 1px solid rgba(255,255,255,0.05);
-            font-size: 12px;
-        }
-    </style>
-</head>
-<body>
-    <div class="dashboard-container">
-        <header>
-            <div>
-                <h1>NEXUS <span>COMMAND PORTAL</span></h1>
-                <p style="color: var(--text-muted); margin: 5px 0 0 0; font-size: 13px;">Enterprise Access Management Panel</p>
-            </div>
-            <div class="status-badge" id="system-status">Syncing...</div>
-        </header>
+# MUST BE THE FIRST TWO LINES IN THE FILE TO PREVENT DEADLOCKS
+from gevent import monkey
+monkey.patch_all()
 
-        <div class="grid-layout">
-            <div class="card">
-                <h2>🟢 Live Active Connections</h2>
-                <div style="max-height: 250px; overflow-y: auto;">
-                    <ul id="sessions-list">
-                        <li style="color: var(--text-muted);">No users online.</li>
-                    </ul>
-                </div>
-            </div>
+import os
+import random
+import string
+import time
+from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 
-            <div class="card">
-                <h2>🚫 Threat & Ban Control</h2>
-                <input type="text" id="ban-input" class="nexus-input" placeholder="Enter target profile username...">
-                <button class="btn btn-danger" style="margin-bottom: 20px;" onclick="applyBan()">Terminate & Block Profile</button>
-                <h3>Active Block Registry</h3>
-                <ul id="blacklist-view"></ul>
-            </div>
-        </div>
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'nexus_super_secret_key_9988'
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-        <div class="grid-layout">
-            <div class="card">
-                <h2>🔑 Dynamic Key Generator</h2>
-                <div style="display: flex; gap: 10px;">
-                    <select id="time-select" class="nexus-select" style="flex: 1;">
-                        <option value="0.016">1 Minute (Test)</option>
-                        <option value="1">1 Hour</option>
-                        <option value="12">12 Hours</option>
-                        <option value="24">24 Hours</option>
-                        <option value="168">1 Week</option>
-                    </select>
-                    <button class="btn" style="flex: 1; height: 46px;" onclick="generateKey()">Generate Key</button>
-                </div>
-                <h3>Valid Keys Matrix</h3>
-                <ul id="codes-list"></ul>
-            </div>
+# Enhanced for Gevent engine production configurations
+socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins="*")
 
-            <div class="card">
-                <h2>🛡️ Infrastructure Event Logger</h2>
-                <div class="logs-box" id="logs-view"></div>
-            </div>
-        </div>
-    </div>
+# State Storage (In-Memory Structures)
+banned_users = set()
+activation_codes = {}
+active_sessions = {}
 
-    <script>
-        const socket = io();
+# --- External API Endpoints for Main App Intercommunication ---
 
-        socket.on('system_init', function(data) {
-            document.getElementById('system-status').innerText = data.status || 'Secure Link Active';
-            addLog("Operational handshake validated.");
-            renderBlacklist(data.banned);
-            renderCodes(data.codes);
-            renderSessions(data.sessions);
-        });
-
-        function generateKey() {
-            const timeLimit = document.getElementById('time-select').value;
-            socket.emit('generate_code', { hours: timeLimit });
-        }
+@app.route('/api/verify_code', methods=['POST'])
+def verify_code():
+    data = request.json or {}
+    code = data.get('code', '').strip()
+    
+    if not code or code not in activation_codes:
+        return jsonify({"valid": False, "reason": "Invalid or unregistered code."}), 200
+    
+    details = activation_codes[code]
+    current_time = time.time()
+    
+    if current_time > details['expires_at']:
+        del activation_codes[code]
+        socketio.emit('code_update', {'codes': get_serializable_codes()})
+        socketio.emit('new_log', {'message': f"⚠️ Code {code} expired automatically upon verification attempt."})
+        return jsonify({"valid": False, "reason": "This activation code has expired."}), 200
         
-        function deleteKey(code) {
-            socket.emit('delete_code', { code: code });
-        }
+    return jsonify({
+        "valid": True, 
+        "expires_at": details['expires_at'],
+        "time_remaining": int(details['expires_at'] - current_time)
+    }), 200
+
+@app.route('/api/check_ban/<username>', methods=['GET'])
+def check_ban(username):
+    is_banned = username.strip() in banned_users
+    return jsonify({"banned": is_banned}), 200
+
+@app.route('/api/apply_ban_remote', methods=['POST'])
+def apply_ban_remote():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    if username:
+        banned_users.add(username)
+        sessions_to_kill = [sid for sid, sess in active_sessions.items() if sess['username'] == username]
+        for sid in sessions_to_kill:
+            del active_sessions[sid]
+        socketio.emit('blacklist_update', {'banned': list(banned_users)})
+        socketio.emit('session_update', {'sessions': list(active_sessions.values())})
+    return jsonify({"success": True}), 200
+
+# --- Web UI Routes ---
+
+@app.route('/')
+def admin_portal():
+    return render_template('admin_dashboard.html')
+
+# --- Helper Utilities ---
+
+def get_serializable_codes():
+    current_time = time.time()
+    formatted = {}
+    expired_to_clean = []
+    
+    for code, details in activation_codes.items():
+        remaining = details['expires_at'] - current_time
+        if remaining <= 0:
+            expired_to_clean.append(code)
+        else:
+            formatted[code] = {
+                "expires_in_mins": round(remaining / 60, 1),
+                "duration_hours": details['duration_hours']
+            }
+            
+    for code in expired_to_clean:
+        if code in activation_codes:
+            del activation_codes[code]
         
-        function applyBan() {
-            const input = document.getElementById('ban-input');
-            const username = input.value.trim();
-            if (username) {
-                socket.emit('apply_ban', { username: username });
-                input.value = '';
-            }
-        }
+    return formatted
+
+# --- Socket Real-Time Controls ---
+
+@socketio.on('connect')
+def handle_connect():
+    emit('system_init', {
+        'status': 'Secure Link Active',
+        'banned': list(banned_users),
+        'codes': get_serializable_codes(),
+        'sessions': list(active_sessions.values())
+    })
+
+@socketio.on('generate_code')
+def handle_generate_code(data):
+    hours = float(data.get('hours', 1.0))
+    new_code = "NEXUS-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    
+    expiration_timestamp = time.time() + (hours * 3600)
+    activation_codes[new_code] = {
+        "expires_at": expiration_timestamp,
+        "duration_hours": hours
+    }
+    
+    emit('code_update', {'codes': get_serializable_codes()}, broadcast=True)
+    emit('new_log', {'message': f"🔑 Code Generated: {new_code} (Valid for {hours} hours)"}, broadcast=True)
+
+@socketio.on('delete_code')
+def handle_delete_code(data):
+    code = data.get('code')
+    if code in activation_codes:
+        del activation_codes[code]
+        emit('code_update', {'codes': get_serializable_codes()}, broadcast=True)
+        emit('new_log', {'message': f"🗑️ Revoked verification token: {code}"}, broadcast=True)
+
+@socketio.on('apply_ban')
+def handle_ban(data):
+    username = data.get('username', '').strip()
+    if username:
+        banned_users.add(username)
         
-        function liftBan(username) {
-            socket.emit('remove_ban', { username: username });
-        }
+        sessions_to_kill = [sid for sid, sess in active_sessions.items() if sess['username'] == username]
+        for sid in sessions_to_kill:
+            if sid in active_sessions:
+                del active_sessions[sid]
+            
+        emit('blacklist_update', {'banned': list(banned_users)}, broadcast=True)
+        emit('session_update', {'sessions': list(active_sessions.values())}, broadcast=True)
+        emit('force_logout_user', {'username': username}, broadcast=True)
+        emit('new_log', {'message': f"🚫 Restricted profile and terminated active sessions: {username}"}, broadcast=True)
 
-        // Mapping socket listeners exactly to backend events
-        socket.on('code_update', function(data) { renderCodes(data.codes); });
-        socket.on('blacklist_update', function(data) { renderBlacklist(data.banned); });
-        socket.on('session_update', function(data) { renderSessions(data.sessions); });
-        socket.on('new_log', function(data) { addLog(data.message); });
+@socketio.on('remove_ban')
+def handle_unban(data):
+    username = data.get('username')
+    if username in banned_users:
+        banned_users.remove(username)
+        emit('blacklist_update', {'banned': list(banned_users)}, broadcast=True)
+        emit('new_log', {'message': f"✅ Restored system access: {username}"}, broadcast=True)
 
-        function renderCodes(codes) {
-            const container = document.getElementById('codes-list');
-            container.innerHTML = '';
-            const entries = Object.entries(codes);
-            if (entries.length === 0) {
-                container.innerHTML = '<li style="color: var(--text-muted);">No active keys registered.</li>';
-                return;
-            }
-            for (const [code, details] of entries) {
-                container.innerHTML += `
-                    <li>
-                        <span><strong>${code}</strong> <small style="color: var(--text-muted);">(${details.duration_hours}h cap)</small></span>
-                        <span class="badge-active">Expires in: ${details.expires_in_mins}m</span>
-                        <span class="action-link" onclick="deleteKey('${code}')">Revoke</span>
-                    </li>`;
-            }
+@socketio.on('register_user_session')
+def handle_user_session(data):
+    username = data.get('username')
+    ip_address = data.get('ip', request.remote_addr)
+    
+    if username:
+        active_sessions[request.sid] = {
+            "username": username,
+            "joined_at": time.strftime('%H:%M:%S', time.localtime()),
+            "ip": ip_address
         }
+        emit('session_update', {'sessions': list(active_sessions.values())}, broadcast=True)
+        emit('new_log', {'message': f"🟢 User joined network: {username} ({ip_address})"}, broadcast=True)
 
-        function renderBlacklist(bannedList) {
-            const container = document.getElementById('blacklist-view');
-            container.innerHTML = '';
-            if (!bannedList || bannedList.length === 0) {
-                container.innerHTML = '<li style="color: var(--text-muted);">Zero network profiles isolated.</li>';
-                return;
-            }
-            bannedList.forEach(user => {
-                container.innerHTML += `<li><span>User: <strong>${user}</strong></span><span class="action-link" onclick="liftBan('${user}')">De-Isolate</span></li>`;
-            });
-        }
+@socketio.on('disconnect')
+def handle_disconnect():
+    if request.sid in active_sessions:
+        user = active_sessions[request.sid]['username']
+        del active_sessions[request.sid]
+        emit('session_update', {'sessions': list(active_sessions.values())}, broadcast=True)
+        emit('new_log', {'message': f"🔴 User exited network: {user}"}, broadcast=True)
 
-        function renderSessions(sessions) {
-            const container = document.getElementById('sessions-list');
-            container.innerHTML = '';
-            if (!sessions || sessions.length === 0) {
-                container.innerHTML = '<li style="color: var(--text-muted);">Terminal idle. No active users connected.</li>';
-                return;
-            }
-            sessions.forEach(sess => {
-                container.innerHTML += `
-                    <li>
-                        <span>🟢 <strong>${sess.username}</strong> <small style="color: var(--text-muted);">(${sess.ip})</small></span>
-                        <span style="font-size: 12px; color: var(--gold-accent);">Joined: ${sess.joined_at}</span>
-                    </li>`;
-            });
-        }
-
-        function addLog(text) {
-            const box = document.getElementById('logs-view');
-            box.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${text}</div>`;
-            box.scrollTop = box.scrollHeight;
-        }
-    </script>
-</body>
-</html>
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
