@@ -174,6 +174,5 @@ def handle_disconnect():
         emit('new_log', {'message': f"🔴 User exited network: {user}"}, broadcast=True)
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host='0.0.0.0', port=port)
