@@ -5,5 +5,8 @@ gunicorn==22.0.0
 eventlet>=0.33.3
 gunicorn
 Flask-SocketIO
-gevent
 flask_cors
+gevent
+gevent-websocket
+gunicorn
+Flask-SocketIO
