@@ -30,26 +30,31 @@ def verify_code():
     if not code:
         return jsonify({"valid": False, "reason": "No code provided."}), 200
 
+    # Strict check: Key must exist in generated activation codes
     if code in activation_codes:
         details = activation_codes[code]
         current_time = time.time()
         
+        # Check if key has expired
         if current_time > details['expires_at']:
             del activation_codes[code]
             socketio.emit('code_update', {'codes': get_serializable_codes()})
             socketio.emit('new_log', {'message': f"⚠️ Code {code} expired automatically."})
             return jsonify({"valid": False, "reason": "This activation code has expired."}), 200
             
+        # Consume key so it cannot be reused or shared
+        del activation_codes[code]
+        socketio.emit('code_update', {'codes': get_serializable_codes()})
+        socketio.emit('new_log', {'message': f"🔑 Code {code} redeemed successfully."})
+
         return jsonify({
             "valid": True, 
             "expires_at": details['expires_at'],
             "time_remaining": int(details['expires_at'] - current_time)
         }), 200
-        
-    if code.startswith("NEXUS-"):
-        return jsonify({"valid": True}), 200
 
-    return jsonify({"valid": False, "reason": "Invalid code."}), 200
+    # Reject if key does not exist or was already used
+    return jsonify({"valid": False, "reason": "Invalid or already used activation code."}), 200
 
 @app.route('/api/check_ban/<username>', methods=['GET'])
 def check_ban(username):
@@ -139,7 +144,10 @@ def handle_connect():
 @socketio.on('generate_code')
 def handle_generate_code(data):
     hours = float(data.get('hours', 1.0))
-    new_code = "NEXUS-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    
+    # Generates exact 14-character code: 'NEXUS-' (6 chars) + 8 random chars = 14 total
+    random_part = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    new_code = f"NEXUS-{random_part}"
     
     expiration_timestamp = time.time() + (hours * 3600)
     activation_codes[new_code] = {
@@ -148,7 +156,7 @@ def handle_generate_code(data):
     }
     
     emit('code_update', {'codes': get_serializable_codes()}, broadcast=True)
-    emit('new_log', {'message': f"🔑 Code Generated: {new_code} (Valid for {hours} hours)"}, broadcast=True)
+    emit('new_log', {'message': f"🔑 14-Char Code Generated: {new_code} (Valid for {hours} hours)"}, broadcast=True)
 
 @socketio.on('delete_code')
 def handle_delete_code(data):
