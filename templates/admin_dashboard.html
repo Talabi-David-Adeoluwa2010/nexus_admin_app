@@ -202,10 +202,35 @@
     </div>
 
     <script>
-        const socket = io();
+        // Force WebSockets for instant connection on Render
+        const socket = io({
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: 10,
+            reconnectionDelay: 1000
+        });
+
+        socket.on('connect', () => {
+            const statusBadge = document.getElementById('system-status');
+            if (statusBadge) {
+                statusBadge.innerText = 'Connected';
+                statusBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+                statusBadge.style.color = '#22c55e';
+                statusBadge.style.borderColor = '#22c55e';
+            }
+        });
+
+        socket.on('disconnect', () => {
+            const statusBadge = document.getElementById('system-status');
+            if (statusBadge) {
+                statusBadge.innerText = 'Disconnected';
+                statusBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+                statusBadge.style.color = '#ef4444';
+                statusBadge.style.borderColor = '#ef4444';
+            }
+        });
 
         socket.on('system_init', data => {
-            document.getElementById('system-status').innerText = data.status || 'Active';
             renderCodes(data.codes);
             renderBlacklist(data.banned);
             renderSessions(data.sessions);
