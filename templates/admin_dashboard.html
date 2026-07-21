@@ -127,6 +127,15 @@
             margin-bottom: 6px;
             color: var(--text-dim);
         }
+        .key-code {
+            font-family: monospace;
+            font-size: 14px;
+            color: var(--gold);
+            cursor: pointer;
+        }
+        .key-code:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -141,14 +150,14 @@
 
     <div class="grid">
         <div class="card">
-            <h3>🎟️ Activation Key Generator</h3>
+            <h3>🎟️ 14-Char Activation Key Generator</h3>
             <div class="input-group">
                 <input type="number" id="ticket-hours" value="1" min="0.1" step="0.5" placeholder="Duration in Hours">
-                <button onclick="generateKey()">Generate</button>
+                <button onclick="generateKey()">Generate Key</button>
             </div>
             <table>
                 <thead>
-                    <tr><th>Active Key</th><th>Expires In</th><th>Action</th></tr>
+                    <tr><th>Active Key (14 Chars)</th><th>Expires In</th><th>Action</th></tr>
                 </thead>
                 <tbody id="keys-table">
                     <tr><td colspan="3" style="color:var(--text-dim);">No active keys</td></tr>
@@ -196,7 +205,7 @@
         const socket = io();
 
         socket.on('system_init', data => {
-            document.getElementById('system-status').innerText = data.status;
+            document.getElementById('system-status').innerText = data.status || 'Active';
             renderCodes(data.codes);
             renderBlacklist(data.banned);
             renderSessions(data.sessions);
@@ -228,6 +237,12 @@
             socket.emit('remove_ban', { username: user });
         }
 
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                addLog(`📋 Copied key to clipboard: ${text}`);
+            });
+        }
+
         function renderCodes(codes) {
             const tbody = document.getElementById('keys-table');
             tbody.innerHTML = '';
@@ -239,7 +254,7 @@
             keys.forEach(k => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td><strong style="color:var(--gold);">${k}</strong></td>
+                    <td><strong class="key-code" onclick="copyToClipboard('${k}')" title="Click to copy">${k}</strong></td>
                     <td>${codes[k].expires_in_mins} mins</td>
                     <td><button onclick="deleteKey('${k}')" class="btn-danger" style="padding:4px 8px; font-size:11px;">Revoke</button></td>
                 `;
