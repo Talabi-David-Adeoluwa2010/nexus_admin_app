@@ -7,8 +7,3 @@ gunicorn
 Flask-SocketIO
 gevent
 flask_cors
-gevent
-gevent-websocket
-gunicorn
-Flask-SocketIO
-
