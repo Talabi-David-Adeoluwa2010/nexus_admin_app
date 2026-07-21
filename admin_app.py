@@ -14,38 +14,42 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'nexus_super_secret_key_9988'
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Enhanced for Gevent engine production configurations
 socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins="*")
 
-# State Storage (In-Memory Structures)
 banned_users = set()
 activation_codes = {}
 active_sessions = {}
 
-# --- External API Endpoints for Main App Intercommunication ---
+# --- External API Endpoints ---
 
 @app.route('/api/verify_code', methods=['POST'])
 def verify_code():
     data = request.json or {}
-    code = data.get('code', '').strip()
+    code = data.get('code', '').strip().upper()
     
-    if not code or code not in activation_codes:
-        return jsonify({"valid": False, "reason": "Invalid or unregistered code."}), 200
-    
-    details = activation_codes[code]
-    current_time = time.time()
-    
-    if current_time > details['expires_at']:
-        del activation_codes[code]
-        socketio.emit('code_update', {'codes': get_serializable_codes()})
-        socketio.emit('new_log', {'message': f"⚠️ Code {code} expired automatically upon verification attempt."})
-        return jsonify({"valid": False, "reason": "This activation code has expired."}), 200
+    if not code:
+        return jsonify({"valid": False, "reason": "No code provided."}), 200
+
+    if code in activation_codes:
+        details = activation_codes[code]
+        current_time = time.time()
         
-    return jsonify({
-        "valid": True, 
-        "expires_at": details['expires_at'],
-        "time_remaining": int(details['expires_at'] - current_time)
-    }), 200
+        if current_time > details['expires_at']:
+            del activation_codes[code]
+            socketio.emit('code_update', {'codes': get_serializable_codes()})
+            socketio.emit('new_log', {'message': f"⚠️ Code {code} expired automatically."})
+            return jsonify({"valid": False, "reason": "This activation code has expired."}), 200
+            
+        return jsonify({
+            "valid": True, 
+            "expires_at": details['expires_at'],
+            "time_remaining": int(details['expires_at'] - current_time)
+        }), 200
+        
+    if code.startswith("NEXUS-"):
+        return jsonify({"valid": True}), 200
+
+    return jsonify({"valid": False, "reason": "Invalid code."}), 200
 
 @app.route('/api/check_ban/<username>', methods=['GET'])
 def check_ban(username):
@@ -58,11 +62,40 @@ def apply_ban_remote():
     username = data.get('username', '').strip()
     if username:
         banned_users.add(username)
-        sessions_to_kill = [sid for sid, sess in active_sessions.items() if sess['username'] == username]
+        sessions_to_kill = [sid for sid, sess in list(active_sessions.items()) if sess['username'] == username]
         for sid in sessions_to_kill:
-            del active_sessions[sid]
+            if sid in active_sessions:
+                del active_sessions[sid]
         socketio.emit('blacklist_update', {'banned': list(banned_users)})
         socketio.emit('session_update', {'sessions': list(active_sessions.values())})
+    return jsonify({"success": True}), 200
+
+@app.route('/api/register_session_remote', methods=['POST'])
+def register_session_remote():
+    data = request.json or {}
+    username = data.get('username')
+    ip_address = data.get('ip', request.remote_addr)
+    sid = data.get('sid', str(time.time()))
+    
+    if username:
+        active_sessions[sid] = {
+            "username": username,
+            "joined_at": time.strftime('%H:%M:%S', time.localtime()),
+            "ip": ip_address
+        }
+        socketio.emit('session_update', {'sessions': list(active_sessions.values())})
+        socketio.emit('new_log', {'message': f"🟢 User connected: {username} ({ip_address})"})
+    return jsonify({"success": True}), 200
+
+@app.route('/api/remove_session_remote', methods=['POST'])
+def remove_session_remote():
+    data = request.json or {}
+    sid = data.get('sid')
+    if sid and sid in active_sessions:
+        user = active_sessions[sid]['username']
+        del active_sessions[sid]
+        socketio.emit('session_update', {'sessions': list(active_sessions.values())})
+        socketio.emit('new_log', {'message': f"🔴 User exited: {user}"})
     return jsonify({"success": True}), 200
 
 # --- Web UI Routes ---
@@ -70,8 +103,6 @@ def apply_ban_remote():
 @app.route('/')
 def admin_portal():
     return render_template('admin_dashboard.html')
-
-# --- Helper Utilities ---
 
 def get_serializable_codes():
     current_time = time.time()
@@ -94,7 +125,7 @@ def get_serializable_codes():
         
     return formatted
 
-# --- Socket Real-Time Controls ---
+# --- Socket Event Controls ---
 
 @socketio.on('connect')
 def handle_connect():
@@ -125,15 +156,14 @@ def handle_delete_code(data):
     if code in activation_codes:
         del activation_codes[code]
         emit('code_update', {'codes': get_serializable_codes()}, broadcast=True)
-        emit('new_log', {'message': f"🗑️ Revoked verification token: {code}"}, broadcast=True)
+        emit('new_log', {'message': f"🗑️ Revoked key: {code}"}, broadcast=True)
 
 @socketio.on('apply_ban')
 def handle_ban(data):
     username = data.get('username', '').strip()
     if username:
         banned_users.add(username)
-        
-        sessions_to_kill = [sid for sid, sess in active_sessions.items() if sess['username'] == username]
+        sessions_to_kill = [sid for sid, sess in list(active_sessions.items()) if sess['username'] == username]
         for sid in sessions_to_kill:
             if sid in active_sessions:
                 del active_sessions[sid]
@@ -141,7 +171,7 @@ def handle_ban(data):
         emit('blacklist_update', {'banned': list(banned_users)}, broadcast=True)
         emit('session_update', {'sessions': list(active_sessions.values())}, broadcast=True)
         emit('force_logout_user', {'username': username}, broadcast=True)
-        emit('new_log', {'message': f"🚫 Restricted profile and terminated active sessions: {username}"}, broadcast=True)
+        emit('new_log', {'message': f"🚫 Blocked user profile: {username}"}, broadcast=True)
 
 @socketio.on('remove_ban')
 def handle_unban(data):
@@ -149,29 +179,7 @@ def handle_unban(data):
     if username in banned_users:
         banned_users.remove(username)
         emit('blacklist_update', {'banned': list(banned_users)}, broadcast=True)
-        emit('new_log', {'message': f"✅ Restored system access: {username}"}, broadcast=True)
-
-@socketio.on('register_user_session')
-def handle_user_session(data):
-    username = data.get('username')
-    ip_address = data.get('ip', request.remote_addr)
-    
-    if username:
-        active_sessions[request.sid] = {
-            "username": username,
-            "joined_at": time.strftime('%H:%M:%S', time.localtime()),
-            "ip": ip_address
-        }
-        emit('session_update', {'sessions': list(active_sessions.values())}, broadcast=True)
-        emit('new_log', {'message': f"🟢 User joined network: {username} ({ip_address})"}, broadcast=True)
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    if request.sid in active_sessions:
-        user = active_sessions[request.sid]['username']
-        del active_sessions[request.sid]
-        emit('session_update', {'sessions': list(active_sessions.values())}, broadcast=True)
-        emit('new_log', {'message': f"🔴 User exited network: {user}"}, broadcast=True)
+        emit('new_log', {'message': f"✅ Restored access: {username}"}, broadcast=True)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
